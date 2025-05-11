@@ -3,7 +3,8 @@ from spotify import SPOTIFY
 import yt_dlp
 import os
 import eyed3
-from song import Song  # Assuming Song class is defined in song.py
+import requests
+from song import Song  # Corrected import path
 
 # Create folders if they don't exist
 if not os.path.exists('covers'):
