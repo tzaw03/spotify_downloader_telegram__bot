@@ -14,7 +14,7 @@ from models import session, User, SongRequest
 from spotify import SPOTIFY, GENIUS
 from telegram import DB_CHANNEL_ID, CLIENT, BOT_ID
 
-# covers နဲ့ songs ဆိုတဲ့ folder တွေ မရှိရင် ဖန်တီးမယ်
+# Create folders if they don't exist
 if not os.path.exists('covers'):
     os.makedirs('covers')
 if not os.path.exists('songs'):
@@ -78,9 +78,9 @@ class Song:
         for yt in results:
             yt_time = yt["duration"]
             try:
-                if yt_time.count(":") == 2:  # H:MM:SS ပုံစံဆိုရင်
+                if yt_time.count(":") == 2:  # H:MM:SS format
                     yt_time = datetime.datetime.strptime(yt_time, '%H:%M:%S')
-                else:  # MM:SS ပုံစံဆိုရင်
+                else:  # MM:SS format
                     yt_time = datetime.datetime.strptime(yt_time, '%M:%S')
                 difference = abs((yt_time - time_duration).total_seconds())
                 if difference <= 3:
@@ -97,47 +97,44 @@ class Song:
         return yt_link
 
     def yt_download(self, yt_link=None):
-    cookies_content = os.environ.get("YOUTUBE_COOKIES")
-    if cookies_content:
-        with open("cookies.txt", "w") as f:
-            f.write(cookies_content)
-        print("[DEBUG] cookies.txt generated successfully")
+        cookies_content = os.environ.get("YOUTUBE_COOKIES")
+        if cookies_content:
+            with open("cookies.txt", "w") as f:
+                f.write(cookies_content)
+            print("[DEBUG] cookies.txt generated successfully")
 
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'keepvideo': True,
-        'outtmpl': f'{self.path}/{self.id}',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '320',
-        }],
-        'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'geo_bypass': True,
-        'cookiefile': 'cookies.txt' if cookies_content else None,
-        'no_check_certificate': True,
-        'noplaylist': True,
-        'ffmpeg_location': '/usr/bin/ffmpeg',  # Default path for ffmpeg in many systems
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'keepvideo': True,
+            'outtmpl': f'{self.path}/{self.id}',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '320',
+            }],
+            'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'geo_bypass': True,
+            'cookiefile': 'cookies.txt' if cookies_content else None,
+            'no_check_certificate': True,
+            'noplaylist': True,
+            'ffmpeg_location': '/usr/bin/ffmpeg',  # Default path for ffmpeg
         }
         try:
-        with yt_dlp.YoutubeDL(ydl_opts) as mp3:
-            print(f"[YOUTUBE] Downloading {self.track_name} by {self.artist_name}...")
-            mp3.download([yt_link or self.yt_link()])
-            print(f"[YOUTUBE] Download completed for {self.track_name}")
-        except yt_dlp.utils.DownloadError as e:
-        print(f"[WARNING] Best audio format not available: {str(e)}")
-        ydl_opts['format'] = 'bestaudio/best'
-        try:
             with yt_dlp.YoutubeDL(ydl_opts) as mp3:
-                print(f"[YOUTUBE] Retrying download with fallback format for {self.track_name}...")
+                print(f"[YOUTUBE] Downloading {self.track_name} by {self.artist_name}...")
                 mp3.download([yt_link or self.yt_link()])
-                print(f"[YOUTUBE] Fallback download completed for {self.track_name}")
-        except Exception as e2:
-            print(f"[ERROR] Failed to download {self.track_name}: {str(e2)}")
-            return None
-        except Exception as e:
-        print(f"[ERROR] Failed to download {self.track_name}: {str(e)}")
-        return None
+                print(f"[YOUTUBE] Download completed for {self.track_name}")
+        except yt_dlp.utils.DownloadError as e:
+            print(f"[WARNING] Best audio format not available: {str(e)}")
+            ydl_opts['format'] = 'bestaudio/best'
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as mp3:
+                    print(f"[YOUTUBE] Retrying download with fallback format for {self.track_name}...")
+                    mp3.download([yt_link or self.yt_link()])
+                    print(f"[YOUTUBE] Fallback download completed for {self.track_name}")
+            except Exception as e2:
+                print(f"[ERROR] Failed to download {self.track_name}: {str(e2)}")
+                return None
         except Exception as e:
             print(f"[ERROR] Failed to download {self.track_name}: {str(e)}")
             return None
