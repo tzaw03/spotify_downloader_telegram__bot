@@ -4,7 +4,7 @@ import yt_dlp
 import os
 import eyed3
 import requests
-from song import Song  # Corrected import path
+from spotify.song import Song  # Corrected to absolute import
 
 # Create folders if they don't exist
 if not os.path.exists('covers'):
