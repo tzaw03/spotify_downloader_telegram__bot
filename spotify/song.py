@@ -72,53 +72,73 @@ class Song:
         return image_file_name
 
     def yt_link(self):
-        results = list(YoutubeSearch(str(self.track_name + " " + self.artist_name)).to_dict())
-        time_duration = self.convert_time_duration()
-        yt_url = None
+    results = list(YoutubeSearch(str(self.track_name + " " + self.artist_name)).to_dict())
+    time_duration = self.convert_time_duration()
+    yt_url = None
 
-        for yt in results:
-            yt_time = yt["duration"]
-            yt_time = datetime.datetime.strptime(yt_time, '%M:%S')
+    for yt in results:
+        yt_time = yt["duration"]
+        try:
+            # Try parsing as H:MM:SS
+            if yt_time.count(":") == 2:  # Format like H:MM:SS
+                yt_time = datetime.datetime.strptime(yt_time, '%H:%M:%S')
+            else:  # Format like MM:SS
+                yt_time = datetime.datetime.strptime(yt_time, '%M:%S')
             difference = abs((yt_time - time_duration).total_seconds())
-
             if difference <= 3:
                 yt_url = yt['url_suffix']
                 break
-        if yt_url is None:
-            return None
+        except ValueError as e:
+            print(f"[ERROR] Failed to parse duration {yt_time}: {str(e)}")
+            continue
 
-        yt_link = str("https://www.youtube.com/" + yt_url)
-        return yt_link
+    if yt_url is None:
+        return None
+
+    yt_link = str("https://www.youtube.com/" + yt_url)
+    return yt_link
 
     def yt_download(self, yt_link=None):
-        # Generate cookies.txt from environment variable if available
-        cookies_content = os.environ.get("YOUTUBE_COOKIES")
-        if cookies_content:
-            with open("cookies.txt", "w") as f:
-                f.write(cookies_content)
-            print("[DEBUG] cookies.txt generated successfully")
+    # Generate cookies.txt from environment variable if available
+    cookies_content = os.environ.get("YOUTUBE_COOKIES")
+    if cookies_content:
+        with open("cookies.txt", "w") as f:
+            f.write(cookies_content)
+        print("[DEBUG] cookies.txt generated successfully")
 
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'keepvideo': True,
-            'outtmpl': f'{self.path}/{self.id}',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '320',
-            }],
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'geo_bypass': True,
-            'cookiefile': 'cookies.txt' if cookies_content else None,  # Use cookies if available
-        }
+    ydl_opts = {
+        'format': 'bestaudio/best',  # Try bestaudio first
+        'keepvideo': True,
+        'outtmpl': f'{self.path}/{self.id}',
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '320',
+        }],
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'geo_bypass': True,
+        'cookiefile': 'cookies.txt' if cookies_content else None,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as mp3:
+            print(f"[YOUTUBE] Downloading {self.track_name} by {self.artist_name}...")
+            mp3.download([yt_link or self.yt_link()])
+            print(f"[YOUTUBE] Download completed for {self.track_name}")
+    except yt_dlp.utils.DownloadError as e:
+        print(f"[WARNING] Best audio format not available: {str(e)}")
+        # Fallback to any available audio format
+        ydl_opts['format'] = 'bestaudio/best'  # Retry with more permissive format
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as mp3:
-                print(f"[YOUTUBE] Downloading {self.track_name} by {self.artist_name}...")
+                print(f"[YOUTUBE] Retrying download with fallback format for {self.track_name}...")
                 mp3.download([yt_link or self.yt_link()])
-                print(f"[YOUTUBE] Download completed for {self.track_name}")
-        except Exception as e:
-            print(f"[ERROR] Failed to download {self.track_name}: {str(e)}")
+                print(f"[YOUTUBE] Fallback download completed for {self.track_name}")
+        except Exception as e2:
+            print(f"[ERROR] Failed to download {self.track_name}: {str(e2)}")
             return None
+    except Exception as e:
+        print(f"[ERROR] Failed to download {self.track_name}: {str(e)}")
+        return None
 
     def lyrics(self):
         try:
