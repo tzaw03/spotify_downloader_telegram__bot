@@ -116,7 +116,6 @@ class Song:
             'geo_bypass': True,
             'cookiefile': 'cookies.txt' if cookies_content else None,
             'no_check_certificate': True,
-            'noplaylist': True,
             'ffmpeg_location': '/usr/bin/ffmpeg',  # Default path for ffmpeg
         }
         try:
@@ -138,6 +137,31 @@ class Song:
         except Exception as e:
             print(f"[ERROR] Failed to download {self.track_name}: {str(e)}")
             return None
+
+    def download_album_or_playlist(self, spotify_link):
+        # Get album or playlist tracks from Spotify
+        if 'album' in spotify_link:
+            spotify_data = SPOTIFY.album(spotify_link.split('album/')[1].split('?')[0])
+            tracks = spotify_data['tracks']['items']
+        elif 'playlist' in spotify_link:
+            spotify_data = SPOTIFY.playlist(spotify_link.split('playlist/')[1].split('?')[0])
+            tracks = spotify_data['tracks']['items']
+        else:
+            print("[ERROR] Invalid Spotify link: Not an album or playlist")
+            return
+
+        downloaded_files = []
+        for item in tracks:
+            track = item['track'] if 'track' in item else item
+            track_id = track['id']
+            song = Song(f"https://open.spotify.com/track/{track_id}")
+            file_path = song.download()
+            if file_path:
+                downloaded_files.append(file_path)
+            else:
+                print(f"[ERROR] Failed to download track: {track['name']}")
+
+        return downloaded_files
 
     def lyrics(self):
         try:
@@ -227,44 +251,70 @@ class Song:
         await processing.edit(f"Uploading: {percentage:.2f}%")
 
     @staticmethod
-    async def upload_on_telegram(event: events.CallbackQuery.Event, song_id):
+    async def upload_on_telegram(event: events.CallbackQuery.Event, song_id_or_link):
         processing = await event.respond(PROCESSING)
 
-        song_db = session.query(SongRequest).filter_by(spotify_id=song_id).first()
-        if song_db:
-            db_message = await processing.edit(ALREADY_IN_DB)
-            message_id = song_db.song_id_in_group
-        else:
-            song = Song(song_id)
-            db_message = await event.respond(NOT_IN_DB)
+        if 'album' in song_id_or_link or 'playlist' in song_id_or_link:
+            song = Song(song_id_or_link.split('track/')[0] if 'track' in song_id_or_link else song_id_or_link)
+            db_message = await processing.edit(NOT_IN_DB)
             await processing.edit(DOWNLOADING)
-            yt_link = song.yt_link()
-            if yt_link is None:
-                print(f'[YOUTUBE] Song not found: {song.uri}')
+            file_paths = song.download_album_or_playlist(song_id_or_link)
+            if not file_paths:
                 await processing.delete()
-                await event.respond(f"{song.track_name}\n{SONG_NOT_FOUND}")
-                return
-            file_path = song.download(yt_link=yt_link)
-            if file_path is None:
-                await processing.delete()
-                await event.respond(f"Failed to download {song.track_name} due to YouTube restrictions")
+                await event.respond(f"Failed to download album/playlist: {song_id_or_link}")
                 return
             await processing.edit(UPLOADING)
-
-            upload_file = await CLIENT.upload_file(file_path)
-            new_message = await CLIENT.send_file(
-                DB_CHANNEL_ID,
-                caption=BOT_ID,
-                file=upload_file,
-                supports_streaming=True,
-                attributes=(
-                    types.DocumentAttributeAudio(title=song.track_name, duration=song.duration_to_seconds,
-                                                performer=song.artist_name),
-                ),
-            )
+            for file_path in file_paths:
+                upload_file = await CLIENT.upload_file(file_path)
+                await CLIENT.send_file(
+                    DB_CHANNEL_ID,
+                    caption=BOT_ID,
+                    file=upload_file,
+                    supports_streaming=True,
+                    attributes=(
+                        types.DocumentAttributeAudio(title=os.path.basename(file_path).replace('.mp3', ''),
+                                                    duration=0,  # Update duration if possible
+                                                    performer="Unknown"),  # Update performer if possible
+                    ),
+                )
+                song.save_db(event.sender_id, 0)  # Adjust song_id_in_group as needed
             await processing.delete()
-            song.save_db(event.sender_id, new_message.id)
-            message_id = new_message.id
+        else:
+            song_db = session.query(SongRequest).filter_by(spotify_id=song_id_or_link).first()
+            if song_db:
+                db_message = await processing.edit(ALREADY_IN_DB)
+                message_id = song_db.song_id_in_group
+            else:
+                song = Song(f"https://open.spotify.com/track/{song_id_or_link}")
+                db_message = await event.respond(NOT_IN_DB)
+                await processing.edit(DOWNLOADING)
+                yt_link = song.yt_link()
+                if yt_link is None:
+                    print(f'[YOUTUBE] Song not found: {song.uri}')
+                    await processing.delete()
+                    await event.respond(f"{song.track_name}\n{SONG_NOT_FOUND}")
+                    return
+                file_path = song.download(yt_link=yt_link)
+                if file_path is None:
+                    await processing.delete()
+                    await event.respond(f"Failed to download {song.track_name} due to YouTube restrictions")
+                    return
+                await processing.edit(UPLOADING)
+
+                upload_file = await CLIENT.upload_file(file_path)
+                new_message = await CLIENT.send_file(
+                    DB_CHANNEL_ID,
+                    caption=BOT_ID,
+                    file=upload_file,
+                    supports_streaming=True,
+                    attributes=(
+                        types.DocumentAttributeAudio(title=song.track_name, duration=song.duration_to_seconds,
+                                                    performer=song.artist_name),
+                    ),
+                )
+                await processing.delete()
+                song.save_db(event.sender_id, new_message.id)
+                message_id = new_message.id
 
         await CLIENT.forward_messages(
             entity=event.chat_id,
