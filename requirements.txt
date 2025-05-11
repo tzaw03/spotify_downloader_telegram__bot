@@ -25,7 +25,6 @@ toml==0.10.2
 urllib3==2.2.1
 websockets==12.0
 youtube-search==2.1.2
-yt-dlp==2024.3.10
 SQLAlchemy
 psycopg2-binary==2.9.10
 yt-dlp==2025.10.22
