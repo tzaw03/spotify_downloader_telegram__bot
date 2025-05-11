@@ -1,39 +1,64 @@
-from telethon import Button
+from telethon import events
+from telethon.tl import types
 
-from spotify import SPOTIFY
+from consts import PROCESSING
+from song import Song
+from telegram import CLIENT
 
+async def download_album_songs_callback_query(event: events.CallbackQuery.Event, song_id):
+    # Process each track in the album or playlist
+    await event.respond(PROCESSING)
+    await Song.upload_on_telegram(event=event, song_id_or_link=song_id)
 
-class Playlist:
-    def __init__(self, link):
-        self.spotify = SPOTIFY.playlist(link)
-        self.id = self.spotify['id']
-        self.spotify_link = self.spotify['external_urls']['spotify']
-        self.playlist_name = self.spotify['name']
-        self.description = self.spotify['description']
-        self.owner_name = self.spotify['owner']['display_name']
-        self.followers_count = self.spotify['followers']['total']
-        self.track_count = len(self.spotify['tracks']['items'])
-        self.playlist_image = self.spotify['images'][0]['url']
-        self.uri = self.spotify['uri']
+async def download_playlist_songs_callback_query(event: events.CallbackQuery.Event, playlist_id):
+    # Process each track in the playlist
+    await event.respond(PROCESSING)
+    await Song.upload_on_telegram(event=event, song_id_or_link=f"https://open.spotify.com/playlist/{playlist_id}")
 
-    async def playlist_template(self):
-        message = f'''
-▶️Playlist: {self.playlist_name}
-📝Description: {self.description}
-👤Owner: {self.owner_name}
-🩷Followers: {self.followers_count}
-🔢Total Track: {self.track_count}
+async def album_template_callback_query(event: events.CallbackQuery.Event, album_id):
+    album = Song(f"https://open.spotify.com/album/{album_id}")
+    message = f'''
+💿 Album: `{album.album_name}`
+🎤 Artist: `{album.artist_name}`
+📅 Release Date: `{album.release_date}`
 
-[IMAGE]({self.playlist_image})
-{self.uri}  
-'''
+[IMAGE]({album.album_cover})
+    '''
+    buttons = [
+        [types.Button.inline("📩 Download Album Songs", data=f"download_album_songs:{album_id}")]
+    ]
+    await event.respond(message, file=album.album_cover, buttons=buttons)
 
-        buttons = [[Button.inline(f'📩Download Playlist Tracks!', data=f"download_playlist_songs:{self.id}")],
-                   [Button.inline(f'🖼️Download Playlist Image!', data=f"download_playlist_image:{self.id}")],
-                   [Button.url(f'🎵Listen on Spotify', self.spotify_link)],
-                   ]
-        return message, buttons
+async def playlist_template_callback_query(event: events.CallbackQuery.Event, playlist_id):
+    playlist = Song(f"https://open.spotify.com/playlist/{playlist_id}")
+    message = f'''
+📜 Playlist: `{playlist.album_name}`  # Update this to playlist name if available
+🎤 Owner: `{playlist.artist_name}`  # Update this to playlist owner if available
 
-    @staticmethod
-    def get_playlist_tracks(link):
-        return SPOTIFY.playlist_tracks(link, limit=50)['items']
+[IMAGE]({playlist.album_cover})
+    '''
+    buttons = [
+        [types.Button.inline("📩 Download Playlist Songs", data=f"download_playlist_songs:{playlist_id}")]
+    ]
+    await event.respond(message, file=playlist.album_cover, buttons=buttons)
+
+def register_callbacks(client: CLIENT):
+    @client.on(events.CallbackQuery(data=b"download_album_songs"))
+    async def callback(event: events.CallbackQuery.Event):
+        song_id = event.data.decode().split(":")[1]
+        await download_album_songs_callback_query(event, song_id)
+
+    @client.on(events.CallbackQuery(data=b"download_playlist_songs"))
+    async def callback(event: events.CallbackQuery.Event):
+        playlist_id = event.data.decode().split(":")[1]
+        await download_playlist_songs_callback_query(event, playlist_id)
+
+    @client.on(events.CallbackQuery(data=b"album"))
+    async def callback(event: events.CallbackQuery.Event):
+        album_id = event.data.decode().split(":")[1]
+        await album_template_callback_query(event, album_id)
+
+    @client.on(events.CallbackQuery(data=b"playlist"))
+    async def callback(event: events.CallbackQuery.Event):
+        playlist_id = event.data.decode().split(":")[1]
+        await playlist_template_callback_query(event, playlist_id)
