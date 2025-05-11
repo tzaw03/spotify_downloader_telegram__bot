@@ -78,7 +78,6 @@ class Song:
         for yt in results:
             yt_time = yt["duration"]
             try:
-                # H:MM:SS ပုံစံလား MM:SS ပုံစံလား စစ်မယ်
                 if yt_time.count(":") == 2:  # H:MM:SS ပုံစံဆိုရင်
                     yt_time = datetime.datetime.strptime(yt_time, '%H:%M:%S')
                 else:  # MM:SS ပုံစံဆိုရင်
@@ -98,7 +97,6 @@ class Song:
         return yt_link
 
     def yt_download(self, yt_link=None):
-        # YOUTUBE_COOKIES ကနေ cookies.txt ဖိုင်ကို runtime မှာ ဖန်တီးမယ်
         cookies_content = os.environ.get("YOUTUBE_COOKIES")
         if cookies_content:
             with open("cookies.txt", "w") as f:
@@ -106,7 +104,7 @@ class Song:
             print("[DEBUG] cookies.txt generated successfully")
 
         ydl_opts = {
-            'format': 'bestaudio/best',  # အကောင်းဆုံး audio ကို အရင်စမ်းမယ်
+            'format': 'bestaudio/best',
             'keepvideo': True,
             'outtmpl': f'{self.path}/{self.id}',
             'postprocessors': [{
@@ -114,9 +112,11 @@ class Song:
                 'preferredcodec': 'mp3',
                 'preferredquality': '320',
             }],
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'geo_bypass': True,
             'cookiefile': 'cookies.txt' if cookies_content else None,
+            'no_check_certificate': True,  # SSL certificate check ကို skip လုပ်မယ်
+            'noplaylist': True,  # Playlist ကို skip လုပ်မယ်
         }
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as mp3:
@@ -125,7 +125,6 @@ class Song:
                 print(f"[YOUTUBE] Download completed for {self.track_name}")
         except yt_dlp.utils.DownloadError as e:
             print(f"[WARNING] Best audio format not available: {str(e)}")
-            # အကယ်၍ မရရင် အခြား format နဲ့ ထပ်စမ်းမယ်
             ydl_opts['format'] = 'bestaudio/best'
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as mp3:
@@ -155,7 +154,7 @@ class Song:
         mp3.tag.album_artist = self.artist_name
         mp3.tag.title = self.track_name + self.features()
         mp3.tag.track_num = self.track_number
-        mp3.tag.year = self.release_date  # ဒီမှာ track_number အစား release_date ကို သုံးလိုက်တယ်
+        mp3.tag.year = self.release_date
 
         lyrics = self.lyrics()
         if lyrics is not None:
@@ -230,13 +229,11 @@ class Song:
     async def upload_on_telegram(event: events.CallbackQuery.Event, song_id):
         processing = await event.respond(PROCESSING)
 
-        # သီချင်းက database ထဲမှာ ရှိမရှိ အရင်စစ်မယ်
         song_db = session.query(SongRequest).filter_by(spotify_id=song_id).first()
         if song_db:
             db_message = await processing.edit(ALREADY_IN_DB)
             message_id = song_db.song_id_in_group
         else:
-            # မရှိရင် database ထဲမှာ အသစ်ထည့်မယ်
             song = Song(song_id)
             db_message = await event.respond(NOT_IN_DB)
             await processing.edit(DOWNLOADING)
@@ -268,7 +265,6 @@ class Song:
             song.save_db(event.sender_id, new_message.id)
             message_id = new_message.id
 
-        # မက်ဆေ့ချ်ကို forward လုပ်မယ်
         await CLIENT.forward_messages(
             entity=event.chat_id,
             messages=message_id,
